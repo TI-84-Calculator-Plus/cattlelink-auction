@@ -16,7 +16,7 @@ const io = new Server(server, {
 
 // In-memory lots
 let lots = {
-  lot1: { currentBid: 0, currentBidder: "", status: "closed" }
+  lot1: { currentBid: 0, currentBidder: "", status: "closed", timerRunning: false }
 };
 
 io.on('connection', (socket) => {
@@ -27,7 +27,7 @@ io.on('connection', (socket) => {
     console.log(`📍 Client ${socket.id} joining lot: ${lotId}`);
     
     if (!lots[lotId]) {
-      lots[lotId] = { currentBid: 0, currentBidder: "", status: "closed" };
+      lots[lotId] = { currentBid: 0, currentBidder: "", status: "closed", timerRunning: false };
     }
     
     socket.join(lotId);
@@ -39,6 +39,11 @@ io.on('connection', (socket) => {
       currentBid: lots[lotId].currentBid,
       name: lots[lotId].currentBidder 
     });
+    
+    // Send timer status
+    if (lots[lotId].timerRunning) {
+      socket.emit('timerStarted', { lotId });
+    }
     
     // Send current status
     const status = lots[lotId].status;
@@ -61,7 +66,7 @@ io.on('connection', (socket) => {
   socket.on('openLot', (lotId) => {
     console.log(`🟢 OPEN LOT received for: ${lotId}`);
     if (!lots[lotId]) {
-      lots[lotId] = { currentBid: 0, currentBidder: "", status: "closed" };
+      lots[lotId] = { currentBid: 0, currentBidder: "", status: "closed", timerRunning: false };
     }
     lots[lotId].status = "open";
     console.log(`Broadcasting lotOpen for ${lotId}`);
@@ -102,6 +107,7 @@ io.on('connection', (socket) => {
     lots[lotId].currentBid = 0;
     lots[lotId].currentBidder = "";
     lots[lotId].status = "closed";
+    lots[lotId].timerRunning = false;
     console.log(`Broadcasting lotReset for ${lotId}`);
     io.emit('lotReset', { lotId });
   });
@@ -117,7 +123,9 @@ io.on('connection', (socket) => {
     if (bidAmount > lots[lotId].currentBid) {
       lots[lotId].currentBid = bidAmount;
       lots[lotId].currentBidder = name;
+      lots[lotId].timerRunning = true;
       io.emit('bidUpdate', { lotId, currentBid: bidAmount, name });
+      io.emit('timerStarted', { lotId });
       console.log(`✅ Bid accepted: ${name} - $${bidAmount}`);
     } else {
       socket.emit('bidRejected', { message: "Bid too low" });
