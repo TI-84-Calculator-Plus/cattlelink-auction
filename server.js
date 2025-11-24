@@ -45,6 +45,9 @@ io.on('connection', (socket) => {
     if (status === "open") {
       socket.emit('lotOpen', { lotId });
       console.log(`Sent lotOpen to ${socket.id}`);
+    } else if (status === "bidding_closed") {
+      socket.emit('lotBiddingClosed', { lotId });
+      console.log(`Sent lotBiddingClosed to ${socket.id}`);
     } else if (status === "sold") {
       socket.emit('lotSold', { lotId });
       console.log(`Sent lotSold to ${socket.id}`);
@@ -63,6 +66,15 @@ io.on('connection', (socket) => {
     lots[lotId].status = "open";
     console.log(`Broadcasting lotOpen for ${lotId}`);
     io.emit('lotOpen', { lotId });
+  });
+
+  // Close lot (bidding ends, but not sold yet)
+  socket.on('closeLot', (lotId) => {
+    console.log(`🔵 CLOSE LOT received for: ${lotId}`);
+    if (!lots[lotId]) return;
+    lots[lotId].status = "bidding_closed";
+    console.log(`Broadcasting lotBiddingClosed for ${lotId}`);
+    io.emit('lotBiddingClosed', { lotId });
   });
 
   // Sell lot
@@ -99,6 +111,7 @@ io.on('connection', (socket) => {
     console.log(`💰 Bid received: ${name} bid $${bidAmount} on ${lotId}`);
     if (!lots[lotId] || lots[lotId].status !== "open") {
       console.log(`Bid rejected - lot status: ${lots[lotId]?.status}`);
+      socket.emit('bidRejected', { message: "Bidding is not open" });
       return;
     }
     if (bidAmount > lots[lotId].currentBid) {
