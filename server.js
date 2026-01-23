@@ -106,7 +106,7 @@ io.on('connection', (socket) => {
   socket.on('resetLot', (lotId) => {
     console.log(`🟠 RESET LOT received for: ${lotId}`);
     if (!lots[lotId]) return;
-    lots[lotId].currentBid = lots[lotid].startingBid;
+    lots[lotId].currentBid = lots[lotId].startingBid;
     lots[lotId].currentBidder = "";
     lots[lotId].status = "closed";
     lots[lotId].timerRunning = false;
