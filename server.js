@@ -113,6 +113,19 @@ io.on('connection', (socket) => {
     console.log(`Broadcasting lotReset for ${lotId}`);
     io.emit('lotReset', { lotId });
   });
+  
+  // Lower bid by amount
+socket.on('lowerBid', ({ lotId, amount }) => {
+  console.log(`📉 LOWER BID received for: ${lotId} by $${amount}`);
+  if (!lots[lotId]) return;
+  
+  // Lower the current bid
+  const newBid = Math.max(0, lots[lotId].currentBid - amount); // Don't go below 0
+  lots[lotId].currentBid = newBid;
+  
+  console.log(`Broadcasting new bid: $${newBid}`);
+  io.emit('bidUpdate', { lotId, currentBid: newBid, name: lots[lotId].currentBidder });
+});
 
   // Place a bid
   socket.on('placeBid', ({ lotId, bidAmount, name }) => {
