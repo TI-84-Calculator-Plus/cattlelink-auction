@@ -113,7 +113,7 @@ io.on('connection', (socket) => {
     console.log(`Broadcasting lotReset for ${lotId}`);
     io.emit('lotReset', { lotId });
   });
-  
+
   // Lower bid by amount
 socket.on('lowerBid', ({ lotId, amount }) => {
   console.log(`📉 LOWER BID received for: ${lotId} by $${amount}`);
@@ -124,7 +124,7 @@ socket.on('lowerBid', ({ lotId, amount }) => {
   lots[lotId].currentBid = newBid;
   
   console.log(`Broadcasting new bid: $${newBid}`);
-  io.emit('bidUpdate', { lotId, currentBid: newBid, name: lots[lotId].currentBidder });
+  io.emit('bidUpdate', { lotId, currentBid: newBid, name: lots[lotId].currentBidder, adminAdjustment: true });
 });
 
   // Place a bid
