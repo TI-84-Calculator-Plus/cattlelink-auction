@@ -16,7 +16,9 @@ const io = new Server(server, {
 
 // In-memory lots
 let lots = {
-  lot1: { currentBid: 0, currentBidder: "", status: "closed", timerRunning: false }
+  lot1: { currentBid: 380, currentBidder: "", status: "closed", timerRunning: false, startingBid: 380 },
+  lot2: { currentBid: 340, currentBidder: "", status: "closed", timerRunning: false, startingBid: 340 }, 
+  lot3: { currentBid: 430, currentBidder: "", status: "closed", timerRunning: false, startingBid: 430 },
 };
 
 io.on('connection', (socket) => {
@@ -104,7 +106,7 @@ io.on('connection', (socket) => {
   socket.on('resetLot', (lotId) => {
     console.log(`🟠 RESET LOT received for: ${lotId}`);
     if (!lots[lotId]) return;
-    lots[lotId].currentBid = 0;
+    lots[lotId].currentBid = lots[lotid].startingBid;
     lots[lotId].currentBidder = "";
     lots[lotId].status = "closed";
     lots[lotId].timerRunning = false;
