@@ -16,9 +16,10 @@ const io = new Server(server, {
 
 // In-memory lots
 let lots = {
-  lot1: { currentBid: 380, currentBidder: "", status: "closed", timerRunning: false, startingBid: 380 },
-  lot2: { currentBid: 340, currentBidder: "", status: "closed", timerRunning: false, startingBid: 340 }, 
-  lot3: { currentBid: 430, currentBidder: "", status: "closed", timerRunning: false, startingBid: 430 },
+  lot1: { currentBid: 410, currentBidder: "", status: "closed", timerRunning: false, startingBid: 410 },
+  lot2: { currentBid: 325, currentBidder: "", status: "closed", timerRunning: false, startingBid: 325 }, 
+  lot3: { currentBid: 460, currentBidder: "", status: "closed", timerRunning: false, startingBid: 460 },
+  lot4: { currentBid: 380, currentBidder: "", status: "closed", timerRunning: false, startingBid: 380 },
 };
 
 io.on('connection', (socket) => {
