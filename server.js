@@ -16,10 +16,10 @@ const io = new Server(server, {
 
 // In-memory lots
 let lots = {
-  lot1: { currentBid: 410, currentBidder: "", status: "closed", timerRunning: false, startingBid: 410 },
-  lot2: { currentBid: 325, currentBidder: "", status: "closed", timerRunning: false, startingBid: 325 }, 
-  lot3: { currentBid: 460, currentBidder: "", status: "closed", timerRunning: false, startingBid: 460 },
-  lot4: { currentBid: 380, currentBidder: "", status: "closed", timerRunning: false, startingBid: 380 },
+  lot1: { currentBid: 410, currentBidder: "", status: "closed", timerRunning: false, startingBid: 410, headCount: 85, avgWeight: 625 },
+  lot2: { currentBid: 325, currentBidder: "", status: "closed", timerRunning: false, startingBid: 325, headCount: 74, avgWeight: 750 }, 
+  lot3: { currentBid: 460, currentBidder: "", status: "closed", timerRunning: false, startingBid: 460, headCount: 105, avgWeight: 550 },
+  lot4: { currentBid: 380, currentBidder: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675 },
 };
 
 io.on('connection', (socket) => {
@@ -129,25 +129,41 @@ socket.on('lowerBid', ({ lotId, amount }) => {
 });
 
   // Place a bid
-  socket.on('placeBid', ({ lotId, bidAmount, name }) => {
-    console.log(`💰 Bid received: ${name} bid $${bidAmount} on ${lotId}`);
-    if (!lots[lotId] || lots[lotId].status !== "open") {
-      console.log(`Bid rejected - lot status: ${lots[lotId]?.status}`);
-      socket.emit('bidRejected', { message: "Bidding is not open" });
+socket.on('placeBid', ({ lotId, bidAmount, name, creditLimit }) => {
+  console.log(`💰 Bid received: ${name} bid $${bidAmount} on ${lotId}`);
+  
+  if (!lots[lotId] || lots[lotId].status !== "open") {
+    console.log(`Bid rejected - lot status: ${lots[lotId]?.status}`);
+    socket.emit('bidRejected', { message: "Bidding is not open" });
+    return;
+  }
+
+  // ✅ Credit limit check
+  if (creditLimit !== undefined && creditLimit !== null) {
+    const lot = lots[lotId];
+    const totalValue = (lot.headCount * (lot.avgWeight / 100)) * bidAmount;
+    if (totalValue > creditLimit) {
+      const maxBid = (creditLimit / (lot.headCount * (lot.avgWeight / 100))).toFixed(2);
+      console.log(`❌ Credit limit exceeded: $${totalValue.toFixed(2)} > $${creditLimit}`);
+      socket.emit('bidRejected', { 
+        message: `Bid exceeds your approved credit limit of $${creditLimit.toLocaleString()}. Maximum bid for this lot is $${maxBid}/cwt.`
+      });
       return;
     }
-    if (bidAmount > lots[lotId].currentBid) {
-      lots[lotId].currentBid = bidAmount;
-      lots[lotId].currentBidder = name;
-      lots[lotId].timerRunning = true;
-      io.emit('bidUpdate', { lotId, currentBid: bidAmount, name });
-      io.emit('timerStarted', { lotId });
-      console.log(`✅ Bid accepted: ${name} - $${bidAmount}`);
-    } else {
-      socket.emit('bidRejected', { message: "Bid too low" });
-      console.log(`❌ Bid too low: $${bidAmount} vs current $${lots[lotId].currentBid}`);
-    }
-  });
+  }
+
+  if (bidAmount > lots[lotId].currentBid) {
+    lots[lotId].currentBid = bidAmount;
+    lots[lotId].currentBidder = name;
+    lots[lotId].timerRunning = true;
+    io.emit('bidUpdate', { lotId, currentBid: bidAmount, name });
+    io.emit('timerStarted', { lotId });
+    console.log(`✅ Bid accepted: ${name} - $${bidAmount}`);
+  } else {
+    socket.emit('bidRejected', { message: "Bid too low" });
+    console.log(`❌ Bid too low: $${bidAmount} vs current $${lots[lotId].currentBid}`);
+  }
+});
 
   socket.on('disconnect', () => {
     console.log("❌ Client disconnected:", socket.id);
