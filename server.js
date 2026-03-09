@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const fetch = require('node-fetch');
 
 const app = express();
 app.use(cors());
@@ -16,10 +17,10 @@ const io = new Server(server, {
 
 // In-memory lots
 let lots = {
-  lot1: { currentBid: 410, currentBidder: "", status: "closed", timerRunning: false, startingBid: 410, headCount: 85, avgWeight: 625 },
-  lot2: { currentBid: 325, currentBidder: "", status: "closed", timerRunning: false, startingBid: 325, headCount: 74, avgWeight: 750 }, 
-  lot3: { currentBid: 460, currentBidder: "", status: "closed", timerRunning: false, startingBid: 460, headCount: 105, avgWeight: 550 },
-  lot4: { currentBid: 380, currentBidder: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675 },
+  lot1: { currentBid: 410, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 410, headCount: 85, avgWeight: 625 },
+  lot2: { currentBid: 325, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 325, headCount: 74, avgWeight: 750 }, 
+  lot3: { currentBid: 460, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 460, headCount: 105, avgWeight: 550 },
+  lot4: { currentBid: 380, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675 },
 };
 
 io.on('connection', (socket) => {
@@ -86,13 +87,36 @@ io.on('connection', (socket) => {
   });
 
   // Sell lot
-  socket.on('sellLot', (lotId) => {
-    console.log(`🔴 SELL LOT received for: ${lotId}`);
-    if (!lots[lotId]) return;
-    lots[lotId].status = "sold";
-    console.log(`Broadcasting lotSold for ${lotId}`);
-    io.emit('lotSold', { lotId });
-  });
+  socket.on('sellLot', async (lotId) => {
+  if (!lots[lotId] || lots[lotId].status !== 'open') return;
+
+  lots[lotId].status = 'sold';
+  io.emit('lotSold', { lotId });
+  console.log(`🔨 Lot ${lotId} sold to ${lots[lotId].currentBidder}`);
+
+  // ✅ Update used credit in Wix
+  const lot = lots[lotId];
+  if (lot.currentBidderID && lot.headCount && lot.avgWeight) {
+    const totalValue = (lot.headCount * (lot.avgWeight / 100)) * lot.currentBid;
+
+    try {
+      const response = await fetch('https://www.cattlelink.net/_functions/updateUsedCredit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bidderID: lot.currentBidderID,
+          amountToAdd: totalValue
+        })
+      });
+
+      const data = await response.json();
+      console.log(`💳 Updated used credit for ${lot.currentBidderID}: +$${totalValue} → Available: $${data.availableCredit}`);
+
+    } catch (err) {
+      console.error("Failed to update used credit:", err);
+    }
+  }
+});
 
   // Cancel lot
   socket.on('cancelLot', (lotId) => {
@@ -129,36 +153,55 @@ socket.on('lowerBid', ({ lotId, amount }) => {
 });
 
   // Place a bid
-socket.on('placeBid', ({ lotId, bidAmount, name, creditLimit }) => {
-  console.log(`💰 Bid received: ${name} bid $${bidAmount} on ${lotId}`);
-  
+socket.on('placeBid', async ({ lotId, bidAmount, name, bidderID, creditLimit }) => {
+  console.log(`💰 Bid received: ${name} (${bidderID}) bid $${bidAmount} on ${lotId}`);
+
   if (!lots[lotId] || lots[lotId].status !== "open") {
     console.log(`Bid rejected - lot status: ${lots[lotId]?.status}`);
     socket.emit('bidRejected', { message: "Bidding is not open" });
     return;
   }
 
-  // ✅ Credit limit check
-  if (creditLimit !== undefined && creditLimit !== null) {
-    const lot = lots[lotId];
-    const totalValue = (lot.headCount * (lot.avgWeight / 100)) * bidAmount;
-    if (totalValue > creditLimit) {
-      const maxBid = (creditLimit / (lot.headCount * (lot.avgWeight / 100))).toFixed(2);
-      console.log(`❌ Credit limit exceeded: $${totalValue.toFixed(2)} > $${creditLimit}`);
-      socket.emit('bidRejected', { 
-        message: `Bid exceeds your approved credit limit of $${creditLimit.toLocaleString()}. Maximum bid for this lot is $${maxBid}/cwt.`
-      });
-      return;
+  // ✅ Check available credit from Wix CMS in real time
+  if (bidderID) {
+    try {
+      const lot = lots[lotId];
+      const totalLotValue = (lot.headCount * (lot.avgWeight / 100)) * bidAmount;
+
+      // Check single lot vs credit limit
+      if (totalLotValue > creditLimit) {
+        const maxBid = (creditLimit / (lot.headCount * (lot.avgWeight / 100))).toFixed(2);
+        socket.emit('bidRejected', {
+          message: `Bid exceeds your credit limit of $${Number(creditLimit).toLocaleString()}. Max bid for this lot: $${maxBid}/cwt.`
+        });
+        return;
+      }
+
+      // Check available credit from Wix in real time
+      const creditResponse = await fetch(`https://www.cattlelink.net/_functions/getAvailableCredit?bidderID=${bidderID}`);
+      const creditData = await creditResponse.json();
+
+      if (creditData.success && totalLotValue > creditData.availableCredit) {
+        socket.emit('bidRejected', {
+          message: `Bid exceeds your available credit. Available: $${creditData.availableCredit.toLocaleString()}. This lot would cost approximately $${totalLotValue.toLocaleString()}.`
+        });
+        return;
+      }
+
+    } catch (err) {
+      console.error("Credit check error:", err);
+      // Don't block the bid if credit check fails — log and continue
     }
   }
 
   if (bidAmount > lots[lotId].currentBid) {
     lots[lotId].currentBid = bidAmount;
     lots[lotId].currentBidder = name;
+    lots[lotId].currentBidderID = bidderID; // ✅ Track bidder ID
     lots[lotId].timerRunning = true;
     io.emit('bidUpdate', { lotId, currentBid: bidAmount, name });
     io.emit('timerStarted', { lotId });
-    console.log(`✅ Bid accepted: ${name} - $${bidAmount}`);
+    console.log(`✅ Bid accepted: ${name} (${bidderID}) - $${bidAmount}`);
   } else {
     socket.emit('bidRejected', { message: "Bid too low" });
     console.log(`❌ Bid too low: $${bidAmount} vs current $${lots[lotId].currentBid}`);
