@@ -86,37 +86,37 @@ io.on('connection', (socket) => {
     io.emit('lotBiddingClosed', { lotId });
   });
 
-  // Sell lot
+// Sell lot
   socket.on('sellLot', async (lotId) => {
-  if (!lots[lotId] || lots[lotId].status !== 'open') return;
+    console.log(`🔴 sellLot handler triggered for: ${lotId}`);
+    if (!lots[lotId] || (lots[lotId].status !== 'open' && lots[lotId].status !== 'bidding_closed')) return;
 
-  lots[lotId].status = 'sold';
-  io.emit('lotSold', { lotId });
-  console.log(`🔨 Lot ${lotId} sold to ${lots[lotId].currentBidder}`);
+    lots[lotId].status = 'sold';
+    io.emit('lotSold', { lotId });
+    console.log(`🔨 Lot ${lotId} sold to ${lots[lotId].currentBidder}`);
 
-  // ✅ Update used credit in Wix
-  const lot = lots[lotId];
-  if (lot.currentBidderID && lot.headCount && lot.avgWeight) {
-    const totalValue = (lot.headCount * (lot.avgWeight / 100)) * lot.currentBid;
+    const lot = lots[lotId];
+    if (lot.currentBidderID && lot.headCount && lot.avgWeight) {
+      const totalValue = (lot.headCount * (lot.avgWeight / 100)) * lot.currentBid;
 
-    try {
-      const response = await fetch('https://www.cattlelink.net/_functions/updateUsedCredit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bidderID: lot.currentBidderID,
-          amountToAdd: totalValue
-        })
-      });
+      try {
+        const response = await fetch('https://www.cattlelink.net/_functions/updateUsedCredit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bidderID: lot.currentBidderID,
+            amountToAdd: totalValue
+          })
+        });
 
-      const data = await response.json();
-      console.log(`💳 Updated used credit for ${lot.currentBidderID}: +$${totalValue} → Available: $${data.availableCredit}`);
+        const data = await response.json();
+        console.log(`💳 Updated used credit for ${lot.currentBidderID}: +$${totalValue} → Available: $${data.availableCredit}`);
 
-    } catch (err) {
-      console.error("Failed to update used credit:", err);
+      } catch (err) {
+        console.error("Failed to update used credit:", err);
+      }
     }
-  }
-});
+  }); // ✅ properly closed inside connection block
 
   // Cancel lot
   socket.on('cancelLot', (lotId) => {
@@ -155,6 +155,7 @@ socket.on('lowerBid', ({ lotId, amount }) => {
   // Place a bid
 socket.on('placeBid', async ({ lotId, bidAmount, name, bidderID, creditLimit }) => {
   console.log(`💰 Bid received: ${name} (${bidderID}) bid $${bidAmount} on ${lotId}`);
+  console.log(`💳 Credit check - bidderID: ${bidderID}, creditLimit: ${creditLimit}, type: ${typeof creditLimit}`);
 
   if (!lots[lotId] || lots[lotId].status !== "open") {
     console.log(`Bid rejected - lot status: ${lots[lotId]?.status}`);
