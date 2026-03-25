@@ -26,6 +26,12 @@ let lots = {
 io.on('connection', (socket) => {
   console.log("✅ Client connected:", socket.id);
 
+  console.log("📋 Registering socket handlers for:", socket.id);
+
+  socket.onAny((event, ...args) => {
+    console.log(`📨 Event received from ${socket.id}: ${event}`, args);
+  });
+  
   // Join a lot
   socket.on('joinLot', (lotId) => {
     console.log(`📍 Client ${socket.id} joining lot: ${lotId}`);
