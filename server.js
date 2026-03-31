@@ -34,8 +34,12 @@ io.on('connection', (socket) => {
   console.log("📋 Registering socket handlers for:", socket.id);
 
   socket.onAny((event, ...args) => {
-    console.log(`📨 Event received from ${socket.id}: ${event}`, args);
-  });
+  if (event !== 'joinLot') {
+    console.log(`📨 Event received from ${socket.id}: ${event}`, JSON.stringify(args));
+  } else {
+    console.log(`🔗 ${socket.id} joined lot: ${args[0]}`);
+  }
+});
   
   // Join a lot
   socket.on('joinLot', (lotId) => {
@@ -146,6 +150,14 @@ io.on('connection', (socket) => {
     auctionState.phase = 'preview';
     io.emit('scrollToLot', { lotIndex: data.lotIndex });
   });
+
+  //Reset to waiting
+  socket.on('resetToWaiting', () => {
+  console.log('⏹ Resetting to waiting state');
+  auctionState.phase = 'waiting';
+  auctionState.currentLotIndex = 0;
+  io.emit('resetToWaiting');
+});
 
   socket.on('getAuctionState', () => {
     socket.emit('auctionState', auctionState);
