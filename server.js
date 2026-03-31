@@ -23,6 +23,11 @@ let lots = {
   lot4: { currentBid: 380, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675 },
 };
 
+let auctionState = {
+  currentLotIndex: 0,
+  phase: 'waiting'
+};
+
 io.on('connection', (socket) => {
   console.log("✅ Client connected:", socket.id);
 
@@ -81,6 +86,7 @@ io.on('connection', (socket) => {
     lots[lotId].status = "open";
     console.log(`Broadcasting lotOpen for ${lotId}`);
     io.emit('lotOpen', { lotId });
+    auctionState.phase = 'bidding';
   });
 
   // Close lot (bidding ends, but not sold yet)
@@ -136,7 +142,13 @@ io.on('connection', (socket) => {
   //Scroll to next lot
   socket.on('scrollToLot', (data) => {
     console.log(`📜 Scrolling all viewers to lot index: ${data.lotIndex}`);
+    auctionState.currentLotIndex = data.lotIndex;
+    auctionState.phase = 'preview';
     io.emit('scrollToLot', { lotIndex: data.lotIndex });
+  });
+
+  socket.on('getAuctionState', () => {
+    socket.emit('auctionState', auctionState);
   });
 
   // Reset lot
