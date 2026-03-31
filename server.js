@@ -91,6 +91,8 @@ io.on('connection', (socket) => {
     console.log(`Broadcasting lotOpen for ${lotId}`);
     io.emit('lotOpen', { lotId });
     auctionState.phase = 'bidding';
+    const lotIndex = parseInt(lotId.replace('lot', '')) - 1;
+    auctionState.currentLotIndex = lotIndex;
   });
 
   // Close lot (bidding ends, but not sold yet)
