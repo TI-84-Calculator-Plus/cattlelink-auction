@@ -133,6 +133,12 @@ io.on('connection', (socket) => {
     io.emit('lotCancelled', { lotId });
   });
 
+  //Scroll to next lot
+  socket.on('scrollToLot', (data) => {
+    console.log(`📜 Scrolling all viewers to lot index: ${data.lotIndex}`);
+    io.emit('scrollToLot', { lotIndex: data.lotIndex });
+  });
+
   // Reset lot
   socket.on('resetLot', (lotId) => {
     console.log(`🟠 RESET LOT received for: ${lotId}`);
