@@ -17,11 +17,59 @@ const io = new Server(server, {
 
 // In-memory lots
 let lots = {
-  lot1: { currentBid: 410, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 410, headCount: 85, avgWeight: 625 },
-  lot2: { currentBid: 325, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 325, headCount: 74, avgWeight: 750 }, 
-  lot3: { currentBid: 460, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 460, headCount: 105, avgWeight: 550 },
-  lot4: { currentBid: 380, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675 },
+  lot1: { currentBid: 410, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 410, headCount: 85, avgWeight: 625, timerEnd: null, timerInterval: null },
+  lot2: { currentBid: 325, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 325, headCount: 74, avgWeight: 750, timerEnd: null, timerInterval: null },
+  lot3: { currentBid: 460, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 460, headCount: 105, avgWeight: 550, timerEnd: null, timerInterval: null },
+  lot4: { currentBid: 380, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675, timerEnd: null, timerInterval: null },
 };
+
+const TIMER_DURATION = 30; // seconds
+ 
+function startLotTimer(lotId) {
+  const lot = lots[lotId];
+  if (!lot) return;
+ 
+  // Clear any existing timer
+  if (lot.timerInterval) {
+    clearInterval(lot.timerInterval);
+    lot.timerInterval = null;
+  }
+ 
+  // Set end time
+  lot.timerEnd = Date.now() + TIMER_DURATION * 1000;
+  lot.timerRunning = true;
+ 
+  console.log(`⏱️ Timer started for ${lotId} — ${TIMER_DURATION} seconds`);
+ 
+  lot.timerInterval = setInterval(() => {
+    const remaining = Math.max(0, Math.ceil((lot.timerEnd - Date.now()) / 1000));
+ 
+    // Broadcast tick to all clients
+    io.emit('timerTick', { lotId, remaining });
+ 
+    if (remaining <= 0) {
+      // Timer expired — close the lot
+      clearInterval(lot.timerInterval);
+      lot.timerInterval = null;
+      lot.timerRunning = false;
+      lot.timerEnd = null;
+      lot.status = "bidding_closed";
+      console.log(`⏰ Timer expired for ${lotId} — closing lot`);
+      io.emit('lotBiddingClosed', { lotId });
+    }
+  }, 1000);
+}
+ 
+function stopLotTimer(lotId) {
+  const lot = lots[lotId];
+  if (!lot) return;
+  if (lot.timerInterval) {
+    clearInterval(lot.timerInterval);
+    lot.timerInterval = null;
+  }
+  lot.timerRunning = false;
+  lot.timerEnd = null;
+}
 
 let auctionState = {
   currentLotIndex: 0,
@@ -43,43 +91,41 @@ io.on('connection', (socket) => {
   
   // Join a lot
   socket.on('joinLot', (lotId) => {
-    console.log(`📍 Client ${socket.id} joining lot: ${lotId}`);
-    
-    if (!lots[lotId]) {
-      lots[lotId] = { currentBid: 0, currentBidder: "", status: "closed", timerRunning: false };
-    }
-    
-    socket.join(lotId);
-    console.log(`Current status for ${lotId}:`, lots[lotId].status);
-    
-    // Send current bid
-    socket.emit('bidUpdate', { 
-      lotId, 
-      currentBid: lots[lotId].currentBid,
-      name: lots[lotId].currentBidder 
-    });
-    
-    // Send timer status
-    if (lots[lotId].timerRunning) {
-      socket.emit('timerStarted', { lotId });
-    }
-    
-    // Send current status
-    const status = lots[lotId].status;
-    if (status === "open") {
-      socket.emit('lotOpen', { lotId });
-      console.log(`Sent lotOpen to ${socket.id}`);
-    } else if (status === "bidding_closed") {
-      socket.emit('lotBiddingClosed', { lotId });
-      console.log(`Sent lotBiddingClosed to ${socket.id}`);
-    } else if (status === "sold") {
-      socket.emit('lotSold', { lotId });
-      console.log(`Sent lotSold to ${socket.id}`);
-    } else if (status === "cancelled") {
-      socket.emit('lotCancelled', { lotId });
-      console.log(`Sent lotCancelled to ${socket.id}`);
-    }
+  console.log(`📍 Client ${socket.id} joining lot: ${lotId}`);
+ 
+  if (!lots[lotId]) {
+    lots[lotId] = { currentBid: 0, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, timerEnd: null, timerInterval: null };
+  }
+ 
+  socket.join(lotId);
+  console.log(`Current status for ${lotId}:`, lots[lotId].status);
+ 
+  // Send current bid
+  socket.emit('bidUpdate', {
+    lotId,
+    currentBid: lots[lotId].currentBid,
+    name: lots[lotId].currentBidder
   });
+ 
+  // ✅ Send remaining timer time to late joiner
+  if (lots[lotId].timerRunning && lots[lotId].timerEnd) {
+    const remaining = Math.max(0, Math.ceil((lots[lotId].timerEnd - Date.now()) / 1000));
+    socket.emit('timerTick', { lotId, remaining });
+    console.log(`Sent timerTick to late joiner: ${remaining}s remaining`);
+  }
+ 
+  // Send current status
+  const status = lots[lotId].status;
+  if (status === "open") {
+    socket.emit('lotOpen', { lotId });
+  } else if (status === "bidding_closed") {
+    socket.emit('lotBiddingClosed', { lotId });
+  } else if (status === "sold") {
+    socket.emit('lotSold', { lotId });
+  } else if (status === "cancelled") {
+    socket.emit('lotCancelled', { lotId });
+  }
+});
 
   // Open lot
   socket.on('openLot', (lotId) => {
@@ -108,6 +154,7 @@ io.on('connection', (socket) => {
   socket.on('sellLot', async (lotId) => {
     console.log(`🔴 sellLot handler triggered for: ${lotId}`);
     if (!lots[lotId] || (lots[lotId].status !== 'open' && lots[lotId].status !== 'bidding_closed')) return;
+    stopLotTimer(lotId);
 
     lots[lotId].status = 'sold';
     io.emit('lotSold', { lotId });
@@ -140,6 +187,7 @@ io.on('connection', (socket) => {
   socket.on('cancelLot', (lotId) => {
     console.log(`⚫ CANCEL LOT received for: ${lotId}`);
     if (!lots[lotId]) return;
+    stopLotTimer(lotId);
     lots[lotId].status = "cancelled";
     console.log(`Broadcasting lotCancelled for ${lotId}`);
     io.emit('lotCancelled', { lotId });
@@ -169,6 +217,7 @@ io.on('connection', (socket) => {
   socket.on('resetLot', (lotId) => {
     console.log(`🟠 RESET LOT received for: ${lotId}`);
     if (!lots[lotId]) return;
+    stopLotTimer(lotId);
     lots[lotId].currentBid = lots[lotId].startingBid;
     lots[lotId].currentBidder = "";
     lots[lotId].status = "closed";
@@ -233,19 +282,21 @@ socket.on('placeBid', async ({ lotId, bidAmount, name, bidderID, creditLimit }) 
     }
   }
 
-  if (bidAmount > lots[lotId].currentBid) {
-    lots[lotId].currentBid = bidAmount;
-    lots[lotId].currentBidder = name;
-    lots[lotId].currentBidderID = bidderID; // ✅ Track bidder ID
-    lots[lotId].timerRunning = true;
-    io.emit('bidUpdate', { lotId, currentBid: bidAmount, name });
-    io.emit('timerStarted', { lotId });
-    console.log(`✅ Bid accepted: ${name} (${bidderID}) - $${bidAmount}`);
+if (bidAmount > lots[lotId].currentBid) {
+  lots[lotId].currentBid = bidAmount;
+  lots[lotId].currentBidder = name;
+  lots[lotId].currentBidderID = bidderID;
+  lots[lotId].timerRunning = true;
+  io.emit('bidUpdate', { lotId, currentBid: bidAmount, name });
+ 
+  // ✅ Start/reset server-side timer on every valid bid
+  startLotTimer(lotId);
+ 
+  console.log(`✅ Bid accepted: ${name} (${bidderID}) - $${bidAmount}`);
   } else {
-    socket.emit('bidRejected', { message: "Bid too low" });
-    console.log(`❌ Bid too low: $${bidAmount} vs current $${lots[lotId].currentBid}`);
+  socket.emit('bidRejected', { message: "Bid too low" });
+  console.log(`❌ Bid too low: $${bidAmount} vs current $${lots[lotId].currentBid}`);
   }
-});
 
   socket.on('disconnect', () => {
     console.log("❌ Client disconnected:", socket.id);
