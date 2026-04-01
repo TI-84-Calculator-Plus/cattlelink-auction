@@ -282,26 +282,28 @@ socket.on('placeBid', async ({ lotId, bidAmount, name, bidderID, creditLimit }) 
     }
   }
 
-if (bidAmount > lots[lotId].currentBid) {
-  lots[lotId].currentBid = bidAmount;
-  lots[lotId].currentBidder = name;
-  lots[lotId].currentBidderID = bidderID;
-  lots[lotId].timerRunning = true;
-  io.emit('bidUpdate', { lotId, currentBid: bidAmount, name });
- 
-  // ✅ Start/reset server-side timer on every valid bid
-  startLotTimer(lotId);
- 
-  console.log(`✅ Bid accepted: ${name} (${bidderID}) - $${bidAmount}`);
+  if (bidAmount > lots[lotId].currentBid) {
+    lots[lotId].currentBid = bidAmount;
+    lots[lotId].currentBidder = name;
+    lots[lotId].currentBidderID = bidderID;
+    lots[lotId].timerRunning = true;
+    io.emit('bidUpdate', { lotId, currentBid: bidAmount, name });
+
+    // ✅ Start/reset server-side timer on every valid bid
+    startLotTimer(lotId);
+
+    console.log(`✅ Bid accepted: ${name} (${bidderID}) - $${bidAmount}`);
   } else {
-  socket.emit('bidRejected', { message: "Bid too low" });
-  console.log(`❌ Bid too low: $${bidAmount} vs current $${lots[lotId].currentBid}`);
+    socket.emit('bidRejected', { message: "Bid too low" });
+    console.log(`❌ Bid too low: $${bidAmount} vs current $${lots[lotId].currentBid}`);
   }
+});
 
   socket.on('disconnect', () => {
     console.log("❌ Client disconnected:", socket.id);
   });
-});
+
+}); // ✅ closes io.on('connection')
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
