@@ -115,16 +115,21 @@ io.on('connection', (socket) => {
   }
  
   // Send current status
+// Send current status
   const status = lots[lotId].status;
   if (status === "open") {
     socket.emit('lotOpen', { lotId });
   } else if (status === "bidding_closed") {
-    socket.emit('lotBiddingClosed', { lotId });
+  socket.emit('lotBiddingClosed', { lotId });
   } else if (status === "sold") {
-    socket.emit('lotSold', { lotId });
+    socket.emit('lotSold', { 
+      lotId,
+      winnerName: lots[lotId].winnerName || "",
+     finalBid: lots[lotId].finalBid || lots[lotId].currentBid
+    });
   } else if (status === "cancelled") {
     socket.emit('lotCancelled', { lotId });
-  }
+}
 });
 
   // Open lot
@@ -156,6 +161,8 @@ socket.on('sellLot', async (lotId) => {
   if (!lots[lotId] || (lots[lotId].status !== 'open' && lots[lotId].status !== 'bidding_closed')) return;
 
   stopLotTimer(lotId);
+  lots[lotId].winnerName = lots[lotId].currentBidder;
+  lots[lotId].finalBid = lots[lotId].currentBid;
   lots[lotId].status = 'sold';
 
   const lot = lots[lotId];
@@ -292,7 +299,7 @@ socket.on('placeBid', async ({ lotId, bidAmount, name, bidderID, creditLimit }) 
     }
   }
 
-if (bidAmount > lots[lotId].currentBid) {
+  if (bidAmount > lots[lotId].currentBid) {
     lots[lotId].currentBid = bidAmount;
     lots[lotId].currentBidder = name;
     lots[lotId].currentBidderID = bidderID;
