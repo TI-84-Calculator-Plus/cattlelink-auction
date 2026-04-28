@@ -331,6 +331,10 @@ if (bidAmount > lots[lotId].currentBid) {
       lot.currentBidderID = "";
       console.log(`↩️ Withdrawal — reverted to starting bid: $${lot.startingBid}`);
       io.emit('bidUpdate', { lotId, currentBid: lot.startingBid, name: "", bidderID: "" });
+      
+      // ✅ No bids left — stop timer and reset to awaiting state
+      stopLotTimer(lotId);
+      io.emit('timerReset', { lotId });
     } else {
       const previousBid = lot.bidHistory[lot.bidHistory.length - 1];
       lot.currentBid = previousBid.amount;
@@ -338,6 +342,9 @@ if (bidAmount > lots[lotId].currentBid) {
       lot.currentBidderID = previousBid.bidderID;
       console.log(`↩️ Withdrawal — reverted to: ${previousBid.name} $${previousBid.amount}`);
       io.emit('bidUpdate', { lotId, currentBid: previousBid.amount, name: previousBid.name, bidderID: previousBid.bidderID });
+      
+      // ✅ Previous bids exist — reset timer for previous bidder
+      startLotTimer(lotId);
     }
 
     // ✅ Reset timer on withdrawal
