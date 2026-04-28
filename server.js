@@ -151,37 +151,45 @@ io.on('connection', (socket) => {
   });
 
 // Sell lot
-  socket.on('sellLot', async (lotId) => {
-    console.log(`🔴 sellLot handler triggered for: ${lotId}`);
-    if (!lots[lotId] || (lots[lotId].status !== 'open' && lots[lotId].status !== 'bidding_closed')) return;
-    stopLotTimer(lotId);
+socket.on('sellLot', async (lotId) => {
+  console.log(`🔴 sellLot handler triggered for: ${lotId}`);
+  if (!lots[lotId] || (lots[lotId].status !== 'open' && lots[lotId].status !== 'bidding_closed')) return;
 
-    lots[lotId].status = 'sold';
-    io.emit('lotSold', { lotId });
-    console.log(`🔨 Lot ${lotId} sold to ${lots[lotId].currentBidder}`);
+  stopLotTimer(lotId);
+  lots[lotId].status = 'sold';
 
-    const lot = lots[lotId];
-    if (lot.currentBidderID && lot.headCount && lot.avgWeight) {
-      const totalValue = (lot.headCount * (lot.avgWeight / 100)) * lot.currentBid;
+  const lot = lots[lotId];
 
-      try {
-        const response = await fetch('https://www.cattlelink.net/_functions/updateUsedCredit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            bidderID: lot.currentBidderID,
-            amountToAdd: totalValue
-          })
-        });
+  io.emit('lotSold', {
+    lotId,
+    winnerName: lot.currentBidder,
+    winnerBidderID: lot.currentBidderID,
+    finalBid: lot.currentBid
+  });
 
-        const data = await response.json();
-        console.log(`💳 Updated used credit for ${lot.currentBidderID}: +$${totalValue} → Available: $${data.availableCredit}`);
+  console.log(`🔨 Lot ${lotId} sold to ${lot.currentBidder}`);
 
-      } catch (err) {
-        console.error("Failed to update used credit:", err);
-      }
+  if (lot.currentBidderID && lot.headCount && lot.avgWeight) {
+    const totalValue = (lot.headCount * (lot.avgWeight / 100)) * lot.currentBid;
+
+    try {
+      const response = await fetch('https://www.cattlelink.net/_functions/updateUsedCredit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bidderID: lot.currentBidderID,
+          amountToAdd: totalValue
+        })
+      });
+
+      const data = await response.json();
+      console.log(`💳 Updated used credit for ${lot.currentBidderID}: +$${totalValue} → Available: $${data.availableCredit}`);
+
+    } catch (err) {
+      console.error("Failed to update used credit:", err);
     }
-  }); // ✅ properly closed inside connection block
+  }
+});
 
   // Cancel lot
   socket.on('cancelLot', (lotId) => {
