@@ -1,3 +1,7 @@
+// SERVER.JS
+
+
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -17,10 +21,10 @@ const io = new Server(server, {
 
 // In-memory lots
 let lots = {
-  lot1: { currentBid: 410, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 410, headCount: 85, avgWeight: 625, timerEnd: null, timerInterval: null, bidHistory: [] },
-  lot2: { currentBid: 325, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 325, headCount: 74, avgWeight: 750, timerEnd: null, timerInterval: null, bidHistory: [] },
-  lot3: { currentBid: 460, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 460, headCount: 105, avgWeight: 550, timerEnd: null, timerInterval: null, bidHistory: [] },
-  lot4: { currentBid: 380, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675, timerEnd: null, timerInterval: null, bidHistory: [] },
+  lot1: { currentBid: 410, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 410, headCount: 85, avgWeight: 625, timerEnd: null, timerInterval: null },
+  lot2: { currentBid: 325, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 325, headCount: 74, avgWeight: 750, timerEnd: null, timerInterval: null },
+  lot3: { currentBid: 460, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 460, headCount: 105, avgWeight: 550, timerEnd: null, timerInterval: null },
+  lot4: { currentBid: 380, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675, timerEnd: null, timerInterval: null },
 };
 
 const TIMER_DURATION = 30; // seconds
@@ -215,18 +219,16 @@ io.on('connection', (socket) => {
 
   // Reset lot
   socket.on('resetLot', (lotId) => {
-  console.log(`🟠 RESET LOT received for: ${lotId}`);
-  if (!lots[lotId]) return;
-  stopLotTimer(lotId);
-  lots[lotId].currentBid = lots[lotId].startingBid;
-  lots[lotId].currentBidder = "";
-  lots[lotId].currentBidderID = "";
-  lots[lotId].status = "closed";
-  lots[lotId].timerRunning = false;
-  lots[lotId].bidHistory = []; // ✅ Clear bid history on reset
-  console.log(`Broadcasting lotReset for ${lotId}`);
-  io.emit('lotReset', { lotId });
-});
+    console.log(`🟠 RESET LOT received for: ${lotId}`);
+    if (!lots[lotId]) return;
+    stopLotTimer(lotId);
+    lots[lotId].currentBid = lots[lotId].startingBid;
+    lots[lotId].currentBidder = "";
+    lots[lotId].status = "closed";
+    lots[lotId].timerRunning = false;
+    console.log(`Broadcasting lotReset for ${lotId}`);
+    io.emit('lotReset', { lotId });
+  });
 
   // Lower bid by amount
 socket.on('lowerBid', ({ lotId, amount }) => {
@@ -284,19 +286,14 @@ socket.on('placeBid', async ({ lotId, bidAmount, name, bidderID, creditLimit }) 
     }
   }
 
-if (bidAmount > lots[lotId].currentBid) {
+  if (bidAmount > lots[lotId].currentBid) {
     lots[lotId].currentBid = bidAmount;
     lots[lotId].currentBidder = name;
     lots[lotId].currentBidderID = bidderID;
     lots[lotId].timerRunning = true;
+    io.emit('bidUpdate', { lotId, currentBid: bidAmount, name });
 
-    // ✅ Track bid history
-    lots[lotId].bidHistory.push({ name, bidderID, amount: bidAmount });
-
-    // ✅ Include bidderID in bidUpdate
-    io.emit('bidUpdate', { lotId, currentBid: bidAmount, name, bidderID });
-
-    // ✅ Start/reset server-side timer
+    // ✅ Start/reset server-side timer on every valid bid
     startLotTimer(lotId);
 
     console.log(`✅ Bid accepted: ${name} (${bidderID}) - $${bidAmount}`);
@@ -304,48 +301,7 @@ if (bidAmount > lots[lotId].currentBid) {
     socket.emit('bidRejected', { message: "Bid too low" });
     console.log(`❌ Bid too low: $${bidAmount} vs current $${lots[lotId].currentBid}`);
   }
-}); // ✅ closes placeBid
-
-  // Withdraw bid
-  socket.on('withdrawBid', ({ lotId, bidderID }) => {
-    console.log(`↩️ Withdraw bid received from ${bidderID} on ${lotId}`);
-
-    const lot = lots[lotId];
-
-    if (!lot || lot.status !== 'open') {
-      socket.emit('bidRejected', { message: "Cannot withdraw — lot is not open." });
-      return;
-    }
-
-    if (lot.currentBidderID !== bidderID) {
-      socket.emit('bidRejected', { message: "You are not the current highest bidder." });
-      return;
-    }
-
-    // Remove last bid from history
-    lot.bidHistory.pop();
-
-    if (lot.bidHistory.length === 0) {
-      lot.currentBid = lot.startingBid;
-      lot.currentBidder = "";
-      lot.currentBidderID = "";
-      console.log(`↩️ Withdrawal — reverted to starting bid: $${lot.startingBid}`);
-      io.emit('bidUpdate', { lotId, currentBid: lot.startingBid, name: "", bidderID: "" });
-    } else {
-      const previousBid = lot.bidHistory[lot.bidHistory.length - 1];
-      lot.currentBid = previousBid.amount;
-      lot.currentBidder = previousBid.name;
-      lot.currentBidderID = previousBid.bidderID;
-      console.log(`↩️ Withdrawal — reverted to: ${previousBid.name} $${previousBid.amount}`);
-      io.emit('bidUpdate', { lotId, currentBid: previousBid.amount, name: previousBid.name, bidderID: previousBid.bidderID });
-    }
-
-    // ✅ Reset timer on withdrawal
-    startLotTimer(lotId);
-
-    // ✅ Notify all clients
-    io.emit('bidWithdrawn', { lotId, bidderID });
-  }); // ✅ closes withdrawBid
+});
 
   socket.on('disconnect', () => {
     console.log("❌ Client disconnected:", socket.id);
