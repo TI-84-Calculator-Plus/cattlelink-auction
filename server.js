@@ -321,54 +321,6 @@ socket.on('placeBid', async ({ lotId, bidAmount, name, bidderID, creditLimit }) 
   }
 }); // ✅ closes placeBid
 
-  // Withdraw bid
-  socket.on('withdrawBid', ({ lotId, bidderID }) => {
-    console.log(`↩️ Withdraw bid received from ${bidderID} on ${lotId}`);
-
-    const lot = lots[lotId];
-
-    if (!lot || lot.status !== 'open') {
-      socket.emit('bidRejected', { message: "Cannot withdraw — lot is not open." });
-      return;
-    }
-
-    if (lot.currentBidderID !== bidderID) {
-      socket.emit('bidRejected', { message: "You are not the current highest bidder." });
-      return;
-    }
-
-    // Remove last bid from history
-    lot.bidHistory.pop();
-
-    if (lot.bidHistory.length === 0) {
-      lot.currentBid = lot.startingBid;
-      lot.currentBidder = "";
-      lot.currentBidderID = "";
-      console.log(`↩️ Withdrawal — reverted to starting bid: $${lot.startingBid}`);
-      io.emit('bidUpdate', { lotId, currentBid: lot.startingBid, name: "", bidderID: "" });
-      
-      // ✅ No bids left — stop timer and reset to awaiting state
-      stopLotTimer(lotId);
-      io.emit('timerReset', { lotId });
-    } else {
-      const previousBid = lot.bidHistory[lot.bidHistory.length - 1];
-      lot.currentBid = previousBid.amount;
-      lot.currentBidder = previousBid.name;
-      lot.currentBidderID = previousBid.bidderID;
-      console.log(`↩️ Withdrawal — reverted to: ${previousBid.name} $${previousBid.amount}`);
-      io.emit('bidUpdate', { lotId, currentBid: previousBid.amount, name: previousBid.name, bidderID: previousBid.bidderID });
-      
-      // ✅ Previous bids exist — reset timer for previous bidder
-      startLotTimer(lotId);
-    }
-
-    // ✅ Reset timer on withdrawal
-    startLotTimer(lotId);
-
-    // ✅ Notify all clients
-    io.emit('bidWithdrawn', { lotId, bidderID });
-  }); // ✅ closes withdrawBid
-
   socket.on('disconnect', () => {
     console.log("❌ Client disconnected:", socket.id);
   });
