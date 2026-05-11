@@ -316,8 +316,7 @@ socket.on('placeBid', async ({ lotId, bidAmount, name, bidderID, creditLimit }) 
 
     console.log(`✅ Bid accepted: ${name} (${bidderID}) - $${bidAmount}`);
   } else {
-    socket.emit('bidRejected', { message: "Bid too low" });
-    console.log(`❌ Bid too low: $${bidAmount} vs current $${lots[lotId].currentBid}`);
+    console.log(`⏭️ Bid too low, silently ignored: $${bidAmount} vs current $${lots[lotId].currentBid}`);
   }
 }); // ✅ closes placeBid
 
