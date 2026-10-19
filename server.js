@@ -17,10 +17,10 @@ const io = new Server(server, {
 
 // In-memory lots
 let lots = {
-  lot1: { currentBid: 410, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 410, headCount: 85, avgWeight: 625, timerEnd: null, timerInterval: null, bidHistory: [] },
-  lot2: { currentBid: 325, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 325, headCount: 74, avgWeight: 750, timerEnd: null, timerInterval: null, bidHistory: [] },
-  lot3: { currentBid: 460, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 460, headCount: 105, avgWeight: 550, timerEnd: null, timerInterval: null, bidHistory: [] },
-  lot4: { currentBid: 380, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675, timerEnd: null, timerInterval: null, bidHistory: [] },
+  lot1: { currentBid: 410, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 410, headCount: 85, avgWeight: 625, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
+  lot2: { currentBid: 325, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 325, headCount: 74, avgWeight: 750, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
+  lot3: { currentBid: 460, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 460, headCount: 105, avgWeight: 550, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
+  lot4: { currentBid: 380, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
 };
 
 const TIMER_DURATION = 30; // seconds
@@ -88,16 +88,22 @@ io.on('connection', (socket) => {
     console.log(`📍 Client ${socket.id} joining lot: ${lotId}`);
 
     if (!lots[lotId]) {
-      lots[lotId] = { currentBid: 0, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, timerEnd: null, timerInterval: null };
+      lots[lotId] = { currentBid: 0, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false };
     }
 
     socket.join(lotId);
     console.log(`Current status for ${lotId}:`, lots[lotId].status);
 
+    // ✅ Include adminAdjustment and hasRealBid for late joiners
+    // adminAdjustment: true if current bid is below starting bid (floor was lowered)
+    // hasRealBid: true if a real bid has been placed above the floor
     socket.emit('bidUpdate', {
       lotId,
       currentBid: lots[lotId].currentBid,
-      name: lots[lotId].currentBidder
+      name: lots[lotId].currentBidder,
+      bidderID: lots[lotId].currentBidderID,
+      adminAdjustment: lots[lotId].adminAdjusted || false,
+      hasRealBid: lots[lotId].bidHistory.length > 0
     });
 
     if (lots[lotId].timerRunning && lots[lotId].timerEnd) {
@@ -126,7 +132,7 @@ io.on('connection', (socket) => {
   socket.on('openLot', (lotId) => {
     console.log(`🟢 OPEN LOT received for: ${lotId}`);
     if (!lots[lotId]) {
-      lots[lotId] = { currentBid: 0, currentBidder: "", status: "closed", timerRunning: false };
+      lots[lotId] = { currentBid: 0, currentBidder: "", status: "closed", timerRunning: false, adminAdjusted: false };
     }
     lots[lotId].status = "open";
     console.log(`Broadcasting lotOpen for ${lotId}`);
@@ -229,19 +235,21 @@ io.on('connection', (socket) => {
     lots[lotId].status = "closed";
     lots[lotId].timerRunning = false;
     lots[lotId].bidHistory = [];
+    lots[lotId].adminAdjusted = false; // ✅ clear on reset
     console.log(`Broadcasting lotReset for ${lotId}`);
     io.emit('lotReset', { lotId });
   });
 
-  // ✅ CHANGED: Lower bid TO a specific amount (not by an amount)
+  // ✅ Lower bid TO a specific amount
   socket.on('lowerBid', ({ lotId, amount }) => {
     console.log(`📉 LOWER BID received for: ${lotId} — setting to $${amount}`);
     if (!lots[lotId]) return;
 
-   const newBid = Math.max(0, amount);
+    const newBid = Math.max(0, amount);
     lots[lotId].currentBid = newBid;
     lots[lotId].currentBidder = "";
     lots[lotId].currentBidderID = "";
+    lots[lotId].adminAdjusted = true; // ✅ flag for late joiners
 
     console.log(`Broadcasting new bid: $${newBid}`);
     io.emit('bidUpdate', { lotId, currentBid: newBid, name: "", bidderID: "", adminAdjustment: true });
@@ -292,6 +300,7 @@ io.on('connection', (socket) => {
       lots[lotId].currentBidderID = bidderID;
       lots[lotId].timerRunning = true;
       lots[lotId].bidHistory.push({ name, bidderID, amount: bidAmount });
+      lots[lotId].adminAdjusted = false; // ✅ clear once a real bid comes in
       io.emit('bidUpdate', { lotId, currentBid: bidAmount, name, bidderID });
       startLotTimer(lotId);
       console.log(`✅ Bid accepted: ${name} (${bidderID}) - $${bidAmount}`);
