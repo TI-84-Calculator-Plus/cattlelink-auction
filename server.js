@@ -238,9 +238,8 @@ io.on('connection', (socket) => {
     console.log(`📉 LOWER BID received for: ${lotId} — setting to $${amount}`);
     if (!lots[lotId]) return;
 
-    const newBid = Math.max(0, amount); // Don't go below 0
+   const newBid = Math.max(0, amount);
     lots[lotId].currentBid = newBid;
-    // Clear current bidder since bid was manually adjusted
     lots[lotId].currentBidder = "";
     lots[lotId].currentBidderID = "";
 
@@ -253,7 +252,6 @@ io.on('connection', (socket) => {
     console.log(`💰 Bid received: ${name} (${bidderID}) bid $${bidAmount} on ${lotId}`);
     console.log(`💳 Credit check - bidderID: ${bidderID}, creditLimit: ${creditLimit}, type: ${typeof creditLimit}`);
 
-<<<<<<< HEAD
     if (!lots[lotId] || lots[lotId].status !== "open") {
       console.log(`Bid rejected - lot status: ${lots[lotId]?.status}`);
       socket.emit('bidRejected', { message: "Bidding is not open" });
@@ -301,66 +299,6 @@ io.on('connection', (socket) => {
       console.log(`⏭️ Bid too low, silently ignored: $${bidAmount} vs current $${lots[lotId].currentBid}`);
     }
   });
-=======
-  if (!lots[lotId] || lots[lotId].status !== "open") {
-    console.log(`Bid rejected - lot status: ${lots[lotId]?.status}`);
-    socket.emit('bidRejected', { message: "Bidding is not open" });
-    return;
-  }
-
-  // ✅ Check available credit from Wix CMS in real time
-  if (bidderID) {
-    try {
-      const lot = lots[lotId];
-      const totalLotValue = (lot.headCount * (lot.avgWeight / 100)) * bidAmount;
-
-      // Check single lot vs credit limit
-      if (totalLotValue > creditLimit) {
-        const maxBid = (creditLimit / (lot.headCount * (lot.avgWeight / 100))).toFixed(2);
-        socket.emit('bidRejected', {
-          message: `Bid exceeds your credit limit of $${Number(creditLimit).toLocaleString()}. Max bid for this lot: $${maxBid}/cwt.`
-        });
-        return;
-      }
-
-      // Check available credit from Wix in real time
-      const creditResponse = await fetch(`https://www.cattlelink.net/_functions/getAvailableCredit?bidderID=${bidderID}`);
-      const creditData = await creditResponse.json();
-
-      if (creditData.success && totalLotValue > creditData.availableCredit) {
-        socket.emit('bidRejected', {
-          message: `Bid exceeds your available credit. Available: $${creditData.availableCredit.toLocaleString()}. This lot would cost approximately $${totalLotValue.toLocaleString()}.`
-        });
-        return;
-      }
-
-    } catch (err) {
-      console.error("Credit check error:", err);
-      // Don't block the bid if credit check fails — log and continue
-    }
-  }
-
-  if (bidAmount > lots[lotId].currentBid) {
-    lots[lotId].currentBid = bidAmount;
-    lots[lotId].currentBidder = name;
-    lots[lotId].currentBidderID = bidderID;
-    lots[lotId].timerRunning = true;
-
-    // ✅ Track bid history
-    lots[lotId].bidHistory.push({ name, bidderID, amount: bidAmount });
-
-    // ✅ Include bidderID in bidUpdate
-    io.emit('bidUpdate', { lotId, currentBid: bidAmount, name, bidderID });
-
-    // ✅ Start/reset server-side timer
-    startLotTimer(lotId);
-
-    console.log(`✅ Bid accepted: ${name} (${bidderID}) - $${bidAmount}`);
-  } else {
-    console.log(`⏭️ Bid too low, silently ignored: $${bidAmount} vs current $${lots[lotId].currentBid}`);
-  }
-}); // ✅ closes placeBid
->>>>>>> 5ef52a871c5f4fc4fd239e73ae474568dd119e77
 
   socket.on('disconnect', () => {
     console.log("❌ Client disconnected:", socket.id);
