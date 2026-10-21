@@ -18,9 +18,6 @@ const io = new Server(server, {
 // In-memory lots
 let lots = {
   lot1: { currentBid: 370, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 370, headCount: 55, avgWeight: 625, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
-  lot2: { currentBid: 325, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 325, headCount: 74, avgWeight: 750, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
-  lot3: { currentBid: 460, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 460, headCount: 105, avgWeight: 550, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
-  lot4: { currentBid: 380, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
 };
 
 const TIMER_DURATION = 30; // seconds
@@ -68,7 +65,7 @@ function stopLotTimer(lotId) {
 
 let auctionState = {
   currentLotIndex: 0,
-  phase: 'waiting'
+  phase: 'streamstart'
 };
 
 io.on('connection', (socket) => {
@@ -140,6 +137,7 @@ io.on('connection', (socket) => {
     auctionState.phase = 'bidding';
     const lotIndex = parseInt(lotId.replace('lot', '')) - 1;
     auctionState.currentLotIndex = lotIndex;
+    console.log(`auctionState updated: phase=bidding, lotIndex=${lotIndex}`);
   });
 
   // Close lot
@@ -212,12 +210,27 @@ io.on('connection', (socket) => {
     io.emit('scrollToLot', { lotIndex: data.lotIndex });
   });
 
-  // Reset to waiting
-  socket.on('resetToWaiting', () => {
-    console.log('⏹ Resetting to waiting state');
-    auctionState.phase = 'waiting';
+  // Stream start
+  socket.on('goToStreamStart', () => {
+    console.log('🎬 Going to stream start');
+    auctionState.phase = 'streamstart';
     auctionState.currentLotIndex = 0;
-    io.emit('resetToWaiting');
+    io.emit('goToStreamStart');
+  });
+
+  // Stream end
+  socket.on('goToStreamEnd', () => {
+    console.log('🎬 Going to stream end');
+    auctionState.phase = 'streamend';
+    io.emit('goToStreamEnd');
+  });
+
+  // Reset to waiting (kept for backwards compat)
+  socket.on('resetToWaiting', () => {
+    console.log('⏹ Resetting to stream start');
+    auctionState.phase = 'streamstart';
+    auctionState.currentLotIndex = 0;
+    io.emit('goToStreamStart');
   });
 
   socket.on('getAuctionState', () => {
