@@ -17,7 +17,7 @@ const io = new Server(server, {
 
 // In-memory lots
 let lots = {
-  lot1: { currentBid: 365, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 365, headCount: 55, avgWeight: 625, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
+  lot1: { currentBid: 360, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 360, headCount: 55, avgWeight: 625, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
   
 };
 
