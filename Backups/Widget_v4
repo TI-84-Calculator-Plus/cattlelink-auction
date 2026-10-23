@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html style="height:100%; margin:0; padding:0;">
+<head>
+  <meta charset="UTF-8">
+  <title>Auction Widget</title>
+  <style>
+    .increment-btn {
+      flex: 1;
+      padding: 1%;
+      background-color: #e7f3ff;
+      border: 2px solid #007bff;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: clamp(14px, 1vmax, 20px);
+      min-height: clamp(44px, 7vw, 70px);
+    }
+  </style>
+</head>
+<body style="height:100%; margin:0; padding:0;">
+<div id="auction-widget" style="position:relative; border:1px solid #ccc; padding:6px; width:100%; height:100%; font-family: Arial, sans-serif; box-sizing:border-box; display:flex; flex-direction:column;">
+
+  <input type="text" id="bidder-name" placeholder="Your Name" style="width:100%; margin-bottom:0.5%; padding:1.5%; font-size:clamp(12px, 1.2vmax, 16px); height:36px; box-sizing:border-box;">
+
+  <div style="margin-bottom:0.5%; flex-shrink:0;">
+    <label style="font-weight:bold; display:block; margin-bottom:0.5%; font-size:clamp(12px, 1.1vmax, 14px);">Quick Bid:</label>
+    <div style="display:flex; gap:0.5%;">
+      <button class="increment-btn" data-increment="0.25">+$0.25</button>
+      <button class="increment-btn" data-increment="0.50">+$0.50</button>
+      <button class="increment-btn" data-increment="1">+$1</button>
+    </div>
+    <div style="display:flex; gap:0.5%; margin-top:0.5%;">
+      <button class="increment-btn" data-increment="5">+$5</button>
+      <button class="increment-btn" data-increment="10">+$10</button>
+      <button class="increment-btn" data-increment="25">+$25</button>
+    </div>
+  </div>
+
+  <p id="bid-status" style="color:red; min-height:16px; margin:0.3% 0; font-weight:bold; font-size:clamp(11px, 1vmax, 14px); flex-shrink:0;"></p>
+
+  <p id="current-bidder-display" style="margin:0 0 0.3% 0; font-size:clamp(11px, 1vmax, 14px); color:#555; flex-shrink:0; min-height:16px;"></p>
+
+  <h4 style="margin:0.5% 0; font-size:clamp(14px, 1.3vmax, 22px); flex-shrink:0;">Bidding History</h4>
+  <div id="bid-history" style="border-top:1px solid #ccc; padding-top:0.5%; overflow-y:auto; min-height:30px; flex:1; font-size:clamp(12px, 1vmax, 16px);"></div>
+
+  <div id="overlay" style="
+    display:flex;
+    position:absolute;
+    top:0; left:0; right:0; bottom:0;
+    background-color: rgba(128,128,128,0.9);
+    color:white;
+    font-size:clamp(24px, 3vmax, 48px);
+    font-weight:bold;
+    text-align:center;
+    align-items:center;
+    justify-content:center;
+    z-index:1000;
+    flex-direction:column;
+    padding:20px;
+    line-height:1.3;
+  ">AUCTION CLOSED</div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
+<script>
+let lotId = null;
+let startingBid = null;
+let bidderCreditLimit = null;
+let myBidderID = null;
+let wasHighestBidder = false;
+let currentBid = 0; // ✅ Track current bid in JS, not from DOM
+
+const socket = io("https://cattlelink-auction.onrender.com", {
+  transports: ["websocket", "polling"]
+});
+
+const incrementBtns = document.querySelectorAll('.increment-btn');
+const bidderNameInput = document.getElementById('bidder-name');
+const currentBidderDisplay = document.getElementById('current-bidder-display');
+
+incrementBtns.forEach(btn => btn.disabled = true);
+bidderNameInput.disabled = true;
+document.getElementById('overlay').style.display = 'flex';
+
+function setButtonsEnabled(enabled) {
+  incrementBtns.forEach(btn => btn.disabled = !enabled);
+  bidderNameInput.disabled = !enabled;
+}
+
+function removeOptimisticEntry() {
+  const optimistic = document.getElementById('optimistic-entry');
+  if (optimistic) optimistic.remove();
+}
+
+function updateCurrentBidderDisplay(name, bidderID) {
+  if (name && bidderID) {
+    if (myBidderID && bidderID === myBidderID) {
+      wasHighestBidder = true;
+      currentBidderDisplay.textContent = '🏆 You are the current highest bidder!';
+      currentBidderDisplay.style.color = '#28a745';
+      currentBidderDisplay.style.fontWeight = 'bold';
+    } else if (wasHighestBidder) {
+      currentBidderDisplay.textContent = `🔔 You've been outbid! Current highest bidder: ${name}`;
+      currentBidderDisplay.style.color = '#dc3545';
+      currentBidderDisplay.style.fontWeight = 'bold';
+    } else {
+      currentBidderDisplay.textContent = `Current Bidder: ${name}`;
+      currentBidderDisplay.style.color = '#555';
+      currentBidderDisplay.style.fontWeight = 'normal';
+    }
+  } else {
+    currentBidderDisplay.textContent = '';
+    wasHighestBidder = false;
+  }
+}
+
+socket.on('connect', () => {
+  console.log('✅ Connected to server');
+  if (lotId) socket.emit('joinLot', lotId);
+});
+
+socket.on('connect_error', (err) => {
+  console.error('❌ Connection error:', err.message);
+});
+
+socket.on('disconnect', () => {
+  console.log('⚠️ Disconnected');
+});
+
+socket.on('lotOpen', (data) => {
+  if (data.lotId !== lotId) return;
+  setButtonsEnabled(true);
+  document.getElementById('bid-status').textContent = '';
+  document.getElementById('overlay').style.display = 'none';
+});
+
+socket.on('bidUpdate', (data) => {
+  if (data.lotId !== lotId) return;
+  removeOptimisticEntry();
+
+  // ✅ Always update tracked currentBid from server
+  currentBid = data.currentBid;
+
+  const historyEl = document.getElementById('bid-history');
+  if (data.currentBid === 0 || data.currentBid === startingBid || data.adminAdjustment) {
+    historyEl.innerHTML = '';
+  }
+  if (data.name && data.currentBid > 0 && !data.adminAdjustment) {
+    const entry = document.createElement('div');
+    entry.textContent = `${data.name} bid $${data.currentBid.toFixed(2)}`;
+    entry.style.padding = '1px 0';
+    historyEl.prepend(entry);
+  }
+  updateCurrentBidderDisplay(data.name, data.bidderID);
+});
+
+socket.on('bidRejected', (data) => {
+  removeOptimisticEntry();
+  document.getElementById('bid-status').textContent = data.message;
+  setTimeout(() => {
+    document.getElementById('bid-status').textContent = '';
+  }, 9000);
+});
+
+socket.on('lotBiddingClosed', (data) => {
+  if (data.lotId !== lotId) return;
+  const overlay = document.getElementById('overlay');
+  overlay.style.display = 'flex';
+  overlay.innerHTML = "BIDDING CLOSED";
+  overlay.style.backgroundColor = "rgba(255, 165, 0, 0.9)";
+  overlay.style.fontSize = "clamp(24px, 3vmax, 48px)";
+  setButtonsEnabled(false);
+});
+
+socket.on('lotSold', (data) => {
+  if (data.lotId !== lotId) return;
+  const overlay = document.getElementById('overlay');
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `
+    <div style="font-size:clamp(32px, 4vmax, 60px); margin-bottom:15px;">SOLD</div>
+    <div style="font-size:clamp(20px, 2.5vmax, 40px); margin-bottom:10px;">${data.winnerName || 'Unknown'}</div>
+    <div style="font-size:clamp(24px, 3vmax, 48px);">$${data.finalBid ? data.finalBid.toFixed(2) : '0.00'}</div>
+  `;
+  overlay.style.backgroundColor = "rgba(255,0,0,0.9)";
+  overlay.style.fontSize = "clamp(24px, 3vmax, 48px)";
+  setButtonsEnabled(false);
+});
+
+socket.on('lotCancelled', (data) => {
+  if (data.lotId !== lotId) return;
+  const overlay = document.getElementById('overlay');
+  overlay.style.display = 'flex';
+  overlay.innerHTML = "CANCELLED";
+  overlay.style.backgroundColor = "rgba(128,128,128,0.9)";
+  overlay.style.fontSize = "clamp(24px, 3vmax, 48px)";
+  setButtonsEnabled(false);
+});
+
+socket.on('lotReset', (data) => {
+  if (data.lotId !== lotId) return;
+  removeOptimisticEntry();
+  currentBid = startingBid || 0; // ✅ Reset tracked bid
+  document.getElementById('bid-history').innerHTML = '';
+  document.getElementById('bid-status').textContent = '';
+  currentBidderDisplay.textContent = '';
+  wasHighestBidder = false;
+  const overlay = document.getElementById('overlay');
+  overlay.style.display = 'flex';
+  overlay.innerHTML = 'AUCTION CLOSED';
+  overlay.style.backgroundColor = 'rgba(128,128,128,0.9)';
+  overlay.style.fontSize = "clamp(24px, 3vmax, 48px)";
+  setButtonsEnabled(false);
+});
+
+function placeBid(bidAmount) {
+  const bidderName = bidderNameInput.value.trim();
+  if (!bidderName) {
+    document.getElementById('bid-status').textContent = "Enter your name first";
+    return;
+  }
+  if (isNaN(bidAmount) || bidAmount <= 0) {
+    document.getElementById('bid-status').textContent = "Invalid bid amount";
+    return;
+  }
+  removeOptimisticEntry();
+  const historyEl = document.getElementById('bid-history');
+  const optimisticEntry = document.createElement('div');
+  optimisticEntry.id = 'optimistic-entry';
+  optimisticEntry.textContent = `${bidderName} bid $${bidAmount.toFixed(2)}`;
+  optimisticEntry.style.padding = '1px 0';
+  optimisticEntry.style.opacity = '0.5';
+  historyEl.prepend(optimisticEntry);
+  socket.emit('placeBid', {
+    lotId,
+    bidAmount,
+    name: bidderName,
+    bidderID: myBidderID,
+    creditLimit: bidderCreditLimit
+  });
+  document.getElementById('bid-status').textContent = 'Bid placed...';
+  setTimeout(() => {
+    document.getElementById('bid-status').textContent = '';
+  }, 2000);
+}
+
+// ✅ Use tracked currentBid variable, not DOM
+incrementBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const increment = parseFloat(btn.dataset.increment);
+    const newBid = currentBid + increment;
+    placeBid(newBid);
+  });
+});
+
+window.addEventListener('message', function(event) {
+  let data = event.data;
+  if (typeof data === 'string') { try { data = JSON.parse(data); } catch(e) {} }
+  if (data && data.data) data = data.data;
+
+  if (data && data.type === 'setBidderID') {
+    const bidderInput = document.getElementById('bidder-name');
+    if (bidderInput) {
+      bidderInput.value = data.bidderID;
+      bidderInput.setAttribute('readonly', true);
+      bidderInput.style.backgroundColor = '#f0f0f0';
+      bidderInput.style.cursor = 'not-allowed';
+    }
+    myBidderID = data.bidderID;
+    if (data.creditLimit !== undefined) {
+      bidderCreditLimit = data.creditLimit;
+    }
+    console.log("✅ Bidder ID set:", myBidderID);
+  }
+
+  if (data && data.type === 'setLotId') {
+    console.log('🎯 Widget received lotId:', data.lotId);
+    lotId = data.lotId;
+    startingBid = data.startingBid || null;
+    currentBid = startingBid || 0; // ✅ Initialize tracked bid
+    document.getElementById('bid-history').innerHTML = '';
+    document.getElementById('bid-status').textContent = '';
+    currentBidderDisplay.textContent = '';
+    wasHighestBidder = false;
+    if (socket.connected) socket.emit('joinLot', lotId);
+  }
+
+  if (data && data.type === 'viewportWidth') {
+    console.log("viewportWidth received:", data.width);
+    const isMobile = data.width < 768;
+    incrementBtns.forEach(btn => {
+      if (isMobile) {
+        btn.style.minHeight = 'clamp(44px, 7vw, 70px)';
+        btn.style.fontSize = 'clamp(14px, 1vmax, 20px)';
+      } else {
+        btn.style.minHeight = '90px';
+        btn.style.fontSize = 'clamp(20px, 1vmax, 35px)';
+      }
+    });
+  }
+});
+
+window.parent.postMessage({ type: 'requestViewportWidth' }, '*');
+console.log('📐 Requested viewport width from parent');
+console.log("Auction widget loaded...");
+</script>
+</body>
+</html>

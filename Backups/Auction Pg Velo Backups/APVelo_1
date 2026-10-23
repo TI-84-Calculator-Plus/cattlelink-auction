@@ -1,0 +1,258 @@
+import wixUsers from 'wix-users';
+import { getBidderIDForMember } from 'backend/members';
+import wixLocation from 'wix-location';
+import { authentication } from '@wix/site-members';
+import wixData from 'wix-data';
+import wixWindow from 'wix-window';
+
+let currentLotIndex = 0;
+let lotList = [];
+let bidderID = null;
+let creditLimit = null;
+
+// ✅ Badge image lookup
+const badgeImages = {
+  'VAC 30':  'https://static.wixstatic.com/media/2fdc87_7eebd902be644678b0202cb449d1a7b5~mv2.png',
+  'VAC 45':  'https://static.wixstatic.com/media/2fdc87_cea0154e6bba4e6d8cfb4992dd99aafb~mv2.png',
+  'VAC 60':  'https://static.wixstatic.com/media/2fdc87_f8a4d9f0bf40449eb2e569adc77f21da~mv2.png',
+};
+
+function updateBadges(lot) {
+  console.log("updateBadges called, lot.badges:", lot.badges);
+  if (!lot.badges || lot.badges.trim() === '') {
+    $w('#badgeDisplay').collapse();
+    return;
+  }
+  $w('#badgeDisplay').expand();
+  $w('#badgeDisplay').postMessage({ type: 'setBadges', badges: lot.badges });
+}
+
+function sendToWidget(iframe, message) {
+  try { iframe.postMessage(message); } catch(err) { console.error('postMessage failed:', err.message); }
+}
+
+function sendLotIdToAllWidgets(lotId, startingBid) {
+  ['#auctionWidget1', '#timer1', '#currentBid1'].forEach(id => {
+    try {
+      const iframe = $w(id);
+      const send = () => sendToWidget(iframe, { type: 'setLotId', lotId, startingBid });
+      setTimeout(send, 300);
+      setTimeout(send, 1500);
+      setTimeout(send, 3000);
+    } catch(err) { console.error(`Error sending lotId to ${id}:`, err.message); }
+  });
+}
+
+function sendBidderIDToAllWidgets() {
+  if (!bidderID) return;
+  ['#auctionWidget1', '#timer1', '#currentBid1'].forEach(id => {
+    try {
+      const iframe = $w(id);
+      const send = () => sendToWidget(iframe, { type: 'setBidderID', bidderID, creditLimit });
+      setTimeout(send, 500);
+      setTimeout(send, 2000);
+      setTimeout(send, 4000);
+    } catch(err) { console.error(`Error sending bidderID to ${id}:`, err.message); }
+  });
+}
+
+function sendViewportWidth() {
+  const isMobile = wixWindow.formFactor === 'Mobile';
+  ['#auctionWidget1'].forEach(id => {
+    try { $w(id).postMessage({ type: 'viewportWidth', width: isMobile ? 375 : 1024 }); } catch(e) {}
+  });
+}
+
+async function loadLotList() {
+  try {
+    const result = await wixData.query('Listings').ascending('lot').find();
+    lotList = result.items;
+    console.log(`Loaded ${lotList.length} lots from CMS`);
+  } catch(err) { console.error('Error loading lot list:', err); }
+}
+
+async function changeStateSmooth(newState) {
+  await $w('#multiStateBox1').hide('fade', { duration: 500 });
+  await $w('#multiStateBox1').changeState(newState);
+  await $w('#multiStateBox1').show('fade', { duration: 500 });
+}
+
+// ✅ Pinned stream iframe: hidden on streamstart, streamend, and preview
+//    Visible only during bidding
+function updatePinnedStream(newState) {
+  if (newState === 'streamstart' || newState === 'streamend' || newState === 'preview') {
+    $w('#streamIframe').hide();
+  } else {
+    // bidding
+    $w('#streamIframe').show();
+  }
+}
+
+// ✅ Go to stream start
+async function goToStreamStart() {
+  console.log('🎬 goToStreamStart');
+  updatePinnedStream('streamstart');
+  await changeStateSmooth('streamstart');
+}
+
+// ✅ Go to stream end
+async function goToStreamEnd() {
+  console.log('🎬 goToStreamEnd');
+  updatePinnedStream('streamend');
+  await changeStateSmooth('streamend');
+}
+
+// ✅ Advance to a lot — 6 second preview then switch to bidding
+async function goToLot(index) {
+  if (index < 0 || index >= lotList.length) {
+    console.log(`Invalid lot index: ${index}`);
+    return;
+  }
+
+  updatePinnedStream('preview');
+  $w('#section30').scrollTo();
+  currentLotIndex = index;
+  const lot = lotList[index];
+
+  console.log(`Going to lot index ${index}:`, lot.lot);
+
+  try { await $w('#catalog').setFilter(wixData.filter().eq('lot', lot.lot)); }
+  catch(err) { console.error('Error setting catalog filter:', err); }
+
+  $w('#previewLotNumber').text = lot.lot;
+  $w('#previewLotTitle').text = lot.title;
+  updateBadges(lot);
+
+  await changeStateSmooth('preview');
+
+  const lotId = `lot${index + 1}`;
+  const startingBid = lot.startingBid || null;
+
+  setTimeout(async () => {
+    updatePinnedStream('bidding');
+    await changeStateSmooth('bidding');
+    setTimeout(() => {
+      sendLotIdToAllWidgets(lotId, startingBid);
+      sendBidderIDToAllWidgets();
+    }, 1000);
+  }, 6000);
+}
+
+// ✅ Jump straight to bidding (for late joiners)
+async function jumpToBidding(index) {
+  if (index < 0 || index >= lotList.length) return;
+
+  updatePinnedStream('bidding');
+  $w('#section30').scrollTo();
+  currentLotIndex = index;
+  const lot = lotList[index];
+
+  try { await $w('#catalog').setFilter(wixData.filter().eq('lot', lot.lot)); }
+  catch(err) { console.error('Error setting catalog filter:', err); }
+
+  updateBadges(lot);
+  await changeStateSmooth('bidding');
+
+  const lotId = `lot${index + 1}`;
+  const startingBid = lot.startingBid || null;
+
+  setTimeout(() => {
+    sendLotIdToAllWidgets(lotId, startingBid);
+    sendBidderIDToAllWidgets();
+  }, 1000);
+}
+
+$w.onReady(async function () {
+  console.log("Auction page loaded");
+
+  await loadLotList();
+
+  // Initial state — snap to streamstart
+  $w('#multiStateBox1').changeState('streamstart');
+  updatePinnedStream('streamstart');
+
+  const isLoggedIn = await authentication.loggedIn();
+
+  if (isLoggedIn) {
+    $w('#button9').hide();
+    $w('#button3').hide();
+    $w('#registerToBidHeader').hide();
+    $w('#registerToBidDescription').hide();
+
+    try {
+      const user = wixUsers.currentUser;
+      const result = await getBidderIDForMember(user.id);
+      if (result.success) {
+        bidderID = result.bidderID;
+        creditLimit = result.creditLimit;
+        console.log(`Bidder ID: ${bidderID}, Credit Limit: ${creditLimit}`);
+        sendBidderIDToAllWidgets();
+      }
+      $w('#auctionWidget1').onMessage((event) => {
+        let data = event.data;
+        if (typeof data === 'string') { try { data = JSON.parse(data); } catch(e) {} }
+        if (data && data.data) data = data.data;
+        if (data && data.type === 'requestViewportWidth') {
+          console.log("Widget requested viewport width");
+          sendViewportWidth();
+        }
+      });
+    } catch (err) { console.error('Error fetching bidder ID:', err); }
+  } else {
+    $w('#button9').show();
+    $w('#button3').show();
+    $w('#registerToBidDescription').show();
+    $w('#registerToBidHeader').show();
+    $w('#box620').hide();
+  }
+
+  // ✅ Listen for messages from socket bridge
+  $w('#auctionSocketBridge').onMessage(async (event) => {
+    console.log("🔔 Velo received message:", JSON.stringify(event.data));
+
+    let data = event.data;
+    if (typeof data === 'string') { try { data = JSON.parse(data); } catch(e) {} }
+    if (data && data.data) data = data.data;
+
+    // Late joiner sync
+    if (data && data.type === 'auctionState') {
+      console.log("📋 Auction state received — phase:", data.phase, "lot:", data.lotIndex);
+      if (data.phase === 'streamstart') {
+        await goToStreamStart();
+      } else if (data.phase === 'streamend') {
+        await goToStreamEnd();
+      } else if (data.phase === 'preview') {
+        await goToLot(data.lotIndex);
+      } else if (data.phase === 'bidding') {
+        await jumpToBidding(data.lotIndex);
+      }
+    }
+
+    if (data && data.type === 'goToStreamStart') {
+      await goToStreamStart();
+    }
+
+    if (data && data.type === 'goToStreamEnd') {
+      await goToStreamEnd();
+    }
+
+    if (data && data.type === 'scrollToLot') {
+      console.log("✅ Calling goToLot with index:", data.lotIndex);
+      await goToLot(data.lotIndex);
+    }
+
+    // backwards compat
+    if (data && data.type === 'resetToWaiting') {
+      await goToStreamStart();
+    }
+  });
+
+  authentication.onLogin(() => wixLocation.to('/auction'));
+
+  authentication.onLogout(() => {
+    $w('#button9').show();
+    $w('#button3').show();
+    $w('#registerToBidHeader').show();
+    $w('#registerToBidDescription').show();
+  });
+});
