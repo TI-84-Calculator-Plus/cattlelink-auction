@@ -17,8 +17,10 @@ const io = new Server(server, {
 
 // In-memory lots
 let lots = {
-  lot1: { currentBid: 350, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 350, headCount: 55, avgWeight: 625, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
-  
+  lot1: { currentBid: 410, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 410, headCount: 85, avgWeight: 625, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
+  lot2: { currentBid: 325, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 325, headCount: 74, avgWeight: 750, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
+  lot3: { currentBid: 460, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 460, headCount: 105, avgWeight: 550, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
+  lot4: { currentBid: 380, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
 };
 
 const TIMER_DURATION = 30; // seconds
@@ -297,13 +299,15 @@ io.on('connection', (socket) => {
       lot.currentBidderID = prev.bidderID;
       io.emit('bidUpdate', { lotId, currentBid: prev.amount, name: prev.name, bidderID: prev.bidderID });
       io.emit('bidRevoked', { lotId, currentBid: prev.amount, currentBidder: prev.name });
+      startLotTimer(lotId); // restart timer for the restored bidder
       console.log(`↩ Revoked — restored to ${prev.name} at $${prev.amount}`);
     } else {
-      // No bids left — back to starting bid with no bidder
+      // No bids left — back to starting bid with no bidder, stop the timer
       lot.currentBid = lot.startingBid;
       lot.currentBidder = "";
       lot.currentBidderID = "";
       lot.adminAdjusted = false;
+      stopLotTimer(lotId);
       io.emit('bidUpdate', { lotId, currentBid: lot.startingBid, name: "", bidderID: "", hasRealBid: false });
       io.emit('bidRevoked', { lotId, currentBid: lot.startingBid, currentBidder: "" });
       console.log(`↩ Revoked — no bids remain, reset to starting bid $${lot.startingBid}`);
