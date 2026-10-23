@@ -17,10 +17,8 @@ const io = new Server(server, {
 
 // In-memory lots
 let lots = {
-  lot1: { currentBid: 410, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 410, headCount: 85, avgWeight: 625, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
-  lot2: { currentBid: 325, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 325, headCount: 74, avgWeight: 750, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
-  lot3: { currentBid: 460, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 460, headCount: 105, avgWeight: 550, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
-  lot4: { currentBid: 380, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 380, headCount: 63, avgWeight: 675, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
+  lot1: { currentBid: 365, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 365, headCount: 55, avgWeight: 625, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
+  
 };
 
 const TIMER_DURATION = 30; // seconds
