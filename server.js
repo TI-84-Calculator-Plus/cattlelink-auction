@@ -17,7 +17,7 @@ const io = new Server(server, {
 
 // In-memory lots
 let lots = {
-  lot1: { currentBid: 365, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 365, headCount: 55, avgWeight: 625, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
+  lot1: { currentBid: 350, currentBidder: "", currentBidderID: "", status: "closed", timerRunning: false, startingBid: 350, headCount: 55, avgWeight: 625, timerEnd: null, timerInterval: null, bidHistory: [], adminAdjusted: false },
   
 };
 
@@ -274,6 +274,40 @@ io.on('connection', (socket) => {
 
     console.log(`Broadcasting new bid: $${newBid}`);
     io.emit('bidUpdate', { lotId, currentBid: newBid, name: "", bidderID: "", adminAdjustment: true });
+  });
+
+  // Revoke last bid
+  socket.on('revokeLastBid', (lotId) => {
+    console.log(`↩ REVOKE LAST BID received for: ${lotId}`);
+    const lot = lots[lotId];
+    if (!lot || lot.bidHistory.length === 0) {
+      console.log(`Nothing to revoke on ${lotId}`);
+      socket.emit('bidRejected', { message: "No bids to revoke" });
+      return;
+    }
+
+    // Remove the most recent bid
+    lot.bidHistory.pop();
+
+    if (lot.bidHistory.length > 0) {
+      // Restore the previous bid
+      const prev = lot.bidHistory[lot.bidHistory.length - 1];
+      lot.currentBid = prev.amount;
+      lot.currentBidder = prev.name;
+      lot.currentBidderID = prev.bidderID;
+      io.emit('bidUpdate', { lotId, currentBid: prev.amount, name: prev.name, bidderID: prev.bidderID });
+      io.emit('bidRevoked', { lotId, currentBid: prev.amount, currentBidder: prev.name });
+      console.log(`↩ Revoked — restored to ${prev.name} at $${prev.amount}`);
+    } else {
+      // No bids left — back to starting bid with no bidder
+      lot.currentBid = lot.startingBid;
+      lot.currentBidder = "";
+      lot.currentBidderID = "";
+      lot.adminAdjusted = false;
+      io.emit('bidUpdate', { lotId, currentBid: lot.startingBid, name: "", bidderID: "", hasRealBid: false });
+      io.emit('bidRevoked', { lotId, currentBid: lot.startingBid, currentBidder: "" });
+      console.log(`↩ Revoked — no bids remain, reset to starting bid $${lot.startingBid}`);
+    }
   });
 
   // Place a bid
